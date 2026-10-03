@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict'
+import { request as httpRequest } from 'node:http'
+import { randomBytes } from 'node:crypto'
+import { hash } from 'bcryptjs'
+
+process.env.TENANT_BASE_DOMAIN ??= 'ourdomain.com'
+process.env.PLATFORM_HOST ??= 'platform.ourdomain.com'
+process.env.PLATFORM_ADMIN_USERNAME ??= 'platform-smoke'
+process.env.PLATFORM_ADMIN_PASSWORD ??= randomBytes(20).toString('hex')
+
+const { db, closeDatabaseConnection } = await import('../src/db/pool.ts')
+const { TenantRegistry } = await import('../src/tenant/registry.ts')
+const { UserRepository } = await import('../src/users/repository.ts')
+const { buildApp } = await import('../src/app.ts')
+
+const suffix = randomBytes(5).toString('hex')
+const codeA = `smoke-a-${suffix}`
+const codeB = `smoke-b-${suffix}`
+const customDomain = `${codeA}.shop.test`
+const emailA = `admin-a-${suffix}@example.test`
+const emailB = emailA
+const passwordA = randomBytes(20).toString('hex')
+const passwordB = randomBytes(20).toString('hex')
+const basic = (user, password) => `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`
+const ids = []
+let app
+
+function fetchLocal(port, host, path, authorization, method = 'GET', body, extra = {}) {
+    return new Promise((resolve, reject) => {
+        const payload = body ? JSON.stringify(body) : undefined
+        const req = httpRequest({ hostname: '127.0.0.1', port, path, method,
+            headers: { Host: host, ...(authorization ? { Authorization: authorization } : {}),
+                ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
+                ...extra } }, response => {
+            let text = ''
+            response.on('data', chunk => { text += chunk })
+            response.on('end', () => resolve({ status: response.statusCode,
+                body: text ? JSON.parse(text) : null }))
+        })
+        req.on('error', reject)
+        req.end(payload)
+    })
+}
+
+try {
+    for (const [code, domain] of [[codeA, customDomain], [codeB, null]]) {
+        const result = await db.query(
+            'INSERT INTO tenant (code, name, domain) VALUES ($1, $2, $3) RETURNING id',
+            [code, code, domain]
+        )
+        ids.push(Number(result.rows[0].id))
+    }
+    for (const [id, email, password] of [[ids[0], emailA, passwordA], [ids[1], emailB, passwordB]]) {
+        await db.query(`INSERT INTO app_user
+            (tenant_id, email, password_hash, user_type, tenant_role)
+            VALUES ($1, $2, $3, 'TENANT_USER', 'ADMIN')`,
+            [id, email, await hash(password, 12)])
+    }
+
+    const registry = new TenantRegistry(db, process.env.TENANT_BASE_DOMAIN, process.env.PLATFORM_HOST)
+    await registry.load()
+    app = buildApp(registry, new UserRepository(db))
+    const address = await app.listen({ host: '127.0.0.1', port: 0 })
+    const port = Number(new URL(address).port)
+    const hostA = `${codeA}.${process.env.TENANT_BASE_DOMAIN}`
+    const hostB = `${codeB}.${process.env.TENANT_BASE_DOMAIN}`
+    const authA = basic(emailA, passwordA)
+    const platformAuth = basic(process.env.PLATFORM_ADMIN_USERNAME, process.env.PLATFORM_ADMIN_PASSWORD)
+
+    assert.equal((await fetchLocal(port, 'unknown.test', '/health')).status, 200)
+    assert.equal((await fetchLocal(port, hostA, '/api/catalog/tenant')).body.data.id, ids[0])
+    assert.equal((await fetchLocal(port, customDomain, '/api/catalog/tenant')).body.data.id, ids[0])
+    assert.equal((await fetchLocal(port, 'unknown.test', '/api/catalog/tenant')).body.error, 'TENANT_NOT_FOUND')
+    assert.equal((await fetchLocal(port, hostA, '/api/auth/me', authA)).body.data.tenant.id, ids[0])
+    assert.equal((await fetchLocal(port, hostB, '/api/auth/me', authA)).status, 401)
+    assert.equal((await fetchLocal(port, hostA, '/api/admin/users')).status, 401)
+    assert.equal((await fetchLocal(port, hostA, '/api/admin/users', authA)).status, 200)
+    assert.equal((await fetchLocal(port, hostA, '/api/platform/tenants', platformAuth)).status, 404)
+    assert.equal((await fetchLocal(port, process.env.PLATFORM_HOST, '/api/platform/tenants', platformAuth)).status, 200)
+    assert.equal((await fetchLocal(port, process.env.PLATFORM_HOST, '/api/admin/users', platformAuth,
+        'GET', undefined, { 'X-Platform-Tenant-Id': String(ids[1]) })).body.data.length, 1)
+    const created = await fetchLocal(port, hostA, '/api/admin/users', authA, 'POST',
+        { email: `created-${suffix}@example.test`, password: 'safe-password', role: 'EDITOR' })
+    assert.equal(created.status, 201)
+    assert.equal(created.body.data.tenantId, ids[0])
+    assert.equal((await fetchLocal(port, hostB, `/api/admin/users/${created.body.data.id}`,
+        basic(emailB, passwordB))).status, 404)
+    assert.equal((await fetchLocal(port, hostA, `/api/admin/users/${created.body.data.id}`,
+        authA, 'DELETE')).status, 204)
+    console.log('RUNTIME_SMOKE_PASS')
+} finally {
+    if (app) await app.close()
+    if (ids.length) {
+        await db.query('DELETE FROM app_user WHERE tenant_id = ANY($1::bigint[])', [ids])
+        await db.query('DELETE FROM tenant WHERE id = ANY($1::bigint[])', [ids])
+    }
+    await closeDatabaseConnection()
+}

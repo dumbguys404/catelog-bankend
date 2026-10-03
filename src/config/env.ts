@@ -44,13 +44,9 @@ export const env = {
     databaseUrl:
         required('DATABASE_URL'),
 
-    tenantAdmin: {
-        username:
-            required('TENANT_ADMIN_USERNAME'),
+    tenantBaseDomain: required('TENANT_BASE_DOMAIN'),
 
-        password:
-            required('TENANT_ADMIN_PASSWORD')
-    },
+    platformHost: required('PLATFORM_HOST'),
 
     platformAdmin: {
         username:

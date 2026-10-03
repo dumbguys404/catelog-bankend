@@ -1,8 +1,12 @@
 import Fastify from 'fastify'
 import type { FastifyError } from 'fastify'
 
-import { requirePlatformAdmin, requireTenantAdmin } from './plugins/auth.js'
-import { attachTenantContext } from './plugins/tenant-context.js'
+import { requirePlatformAdmin, requireTenantAdmin, requireTenantUser } from './plugins/auth.js'
+import { attachTenantContext, getTenantContext } from './plugins/tenant-context.js'
+import { normalizeHostname, TenantRegistry } from './tenant/registry.js'
+import { UserRepository } from './users/repository.js'
+import { authRoutes } from './routes/auth.routes.js'
+import { adminUserRoutes } from './routes/admin/user.routes.js'
 import { adminBrandRoutes } from './routes/admin/brand.routes.js'
 import { adminCategoryRoutes } from './routes/admin/category.routes.js'
 import { adminCollectionRoutes } from './routes/admin/collection.routes.js'
@@ -13,10 +17,22 @@ import { catalogCollectionRoutes } from './routes/catalog/collection.routes.js'
 import { catalogProductRoutes } from './routes/catalog/product.routes.js'
 import { platformTenantRoutes } from './routes/platform/tenant.routes.js'
 
-export function buildApp() {
+declare module 'fastify' {
+  interface FastifyInstance {
+    tenantRegistry: TenantRegistry
+    userRepository: UserRepository
+  }
+}
+
+export function buildApp(tenantRegistry: TenantRegistry, userRepository: UserRepository) {
   const app = Fastify({
-    logger: true
+    logger: {
+      redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-platform-tenant-id"]']
+    },
+    ajv: { customOptions: { removeAdditional: false } }
   })
+  app.decorate('tenantRegistry', tenantRegistry)
+  app.decorate('userRepository', userRepository)
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const statusCode = error.statusCode ?? 500
@@ -33,6 +49,10 @@ export function buildApp() {
         error: 'UNAUTHORIZED',
         message: 'Authentication required'
       })
+    }
+
+    if (statusCode === 409) {
+      return reply.code(409).send({ error: 'CONFLICT', message: error.message })
     }
 
     request.log.error(error)
@@ -55,8 +75,20 @@ export function buildApp() {
     service: 'catalog-backend'
   }))
 
+  app.register(async (authApp) => {
+    authApp.addHook('preHandler', attachTenantContext)
+    authApp.addHook('preHandler', requireTenantUser)
+    authApp.register(authRoutes)
+  }, { prefix: '/api/auth' })
+
   app.register(async (catalogApp) => {
     catalogApp.addHook('preHandler', attachTenantContext)
+
+    catalogApp.get('/tenant', async (request) => {
+      const tenant = getTenantContext(request)
+      return { data: { id: tenant.id, code: tenant.code, name: tenant.name,
+        domain: normalizeHostname(request.hostname) } }
+    })
 
     catalogApp.register(catalogCategoryRoutes, {
       prefix: '/categories'
@@ -78,8 +110,9 @@ export function buildApp() {
   })
 
   app.register(async (adminApp) => {
-    adminApp.addHook('preHandler', attachTenantContext)
     adminApp.addHook('preHandler', requireTenantAdmin)
+
+    adminApp.register(adminUserRoutes, { prefix: '/users' })
 
     adminApp.register(adminCategoryRoutes, {
       prefix: '/categories'

@@ -3,17 +3,22 @@ import 'dotenv/config'
 import { buildApp } from './app.js'
 
 import {
+  db,
   checkDatabaseConnection,
   closeDatabaseConnection
 } from './db/pool.js'
 
 import { env } from './config/env.js'
+import { TenantRegistry } from './tenant/registry.js'
+import { UserRepository } from './users/repository.js'
 
-const app = buildApp()
+const tenantRegistry = new TenantRegistry(db, env.tenantBaseDomain, env.platformHost)
+const app = buildApp(tenantRegistry, new UserRepository(db))
 
 async function start() {
   try {
     await checkDatabaseConnection()
+    await tenantRegistry.load()
 
     app.log.info(
       'Database connection verified'
