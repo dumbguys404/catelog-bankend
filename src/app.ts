@@ -55,6 +55,10 @@ export function buildApp(tenantRegistry: TenantRegistry, userRepository: UserRep
       return reply.code(409).send({ error: 'CONFLICT', message: error.message })
     }
 
+    if (statusCode === 503) {
+      return reply.code(503).send({ error: 'SERVICE_UNAVAILABLE', message: error.message })
+    }
+
     request.log.error(error)
 
     return reply.code(500).send({

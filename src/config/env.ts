@@ -83,5 +83,15 @@ export const env = {
                 'DB_QUERY_TIMEOUT_MS',
                 20000
             )
+    },
+
+    r2: {
+        accountId: process.env.R2_ACCOUNT_ID,
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        bucket: process.env.R2_BUCKET,
+        publicUrl: process.env.R2_PUBLIC_URL?.replace(/\/+$/, ''),
+        uploadUrlTtlSeconds: numberValue('R2_UPLOAD_URL_TTL_SECONDS', 300),
+        maxImageBytes: numberValue('R2_MAX_IMAGE_BYTES', 15 * 1024 * 1024)
     }
 }

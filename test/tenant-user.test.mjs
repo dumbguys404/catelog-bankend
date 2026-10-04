@@ -11,6 +11,7 @@ process.env.PLATFORM_ADMIN_PASSWORD = 'platform-password'
 const { TenantRegistry } = await import('../src/tenant/registry.ts')
 const { UserRepository } = await import('../src/users/repository.ts')
 const { buildApp } = await import('../src/app.ts')
+const { db } = await import('../src/db/pool.ts')
 
 const basic = (email, password) => `Basic ${Buffer.from(`${email}:${password}`).toString('base64')}`
 
@@ -81,6 +82,13 @@ async function setup() {
     pool.nextId = 2
     const registry = new TenantRegistry(pool, 'ourdomain.com', 'platform.ourdomain.com')
     await registry.load()
+    db.query = async (sql) => {
+        if (sql.includes('COUNT(*)')) return { rows: [{ total: String(pool.tenants.length) }], rowCount: 1 }
+        if (sql.includes('FROM tenant')) return { rows: pool.tenants.map(tenant => ({
+            ...tenant, created_at: new Date(0), updated_at: new Date(0)
+        })), rowCount: pool.tenants.length }
+        throw new Error(`Unexpected platform test query: ${sql}`)
+    }
     const app = buildApp(registry, new UserRepository(pool))
     return { pool, registry, app }
 }
