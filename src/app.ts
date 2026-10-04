@@ -3,19 +3,20 @@ import type { FastifyError } from 'fastify'
 
 import { requirePlatformAdmin, requireTenantAdmin, requireTenantUser } from './plugins/auth.js'
 import { attachTenantContext, getTenantContext } from './plugins/tenant-context.js'
-import { normalizeHostname, TenantRegistry } from './tenant/registry.js'
-import { UserRepository } from './users/repository.js'
-import { authRoutes } from './routes/auth.routes.js'
-import { adminUserRoutes } from './routes/admin/user.routes.js'
-import { adminBrandRoutes } from './routes/admin/brand.routes.js'
-import { adminCategoryRoutes } from './routes/admin/category.routes.js'
-import { adminCollectionRoutes } from './routes/admin/collection.routes.js'
-import { adminProductRoutes } from './routes/admin/product.routes.js'
-import { catalogBrandRoutes } from './routes/catalog/brand.routes.js'
-import { catalogCategoryRoutes } from './routes/catalog/category.routes.js'
-import { catalogCollectionRoutes } from './routes/catalog/collection.routes.js'
-import { catalogProductRoutes } from './routes/catalog/product.routes.js'
-import { platformTenantRoutes } from './routes/platform/tenant.routes.js'
+import { normalizeHostname, TenantRegistry } from './modules/tenant/tenant.registry.js'
+import { UserRepository } from './modules/user/user.repository.js'
+
+import { authRoutes } from './modules/auth/auth.routes.js'
+import { adminUserRoutes } from './modules/user/user.routes.js'
+import { adminBrandRoutes } from './modules/brand/brand.routes.js'
+import { adminCategoryRoutes } from './modules/category/category.routes.js'
+import { adminCollectionRoutes } from './modules/collection/collection.routes.js'
+import { adminProductRoutes } from './modules/product/product.routes.js'
+import { catalogBrandRoutes } from './modules/brand/brand.routes.js'
+import { catalogCategoryRoutes } from './modules/category/category.routes.js'
+import { catalogCollectionRoutes } from './modules/collection/collection.routes.js'
+import { catalogProductRoutes } from './modules/product/product.routes.js'
+import { platformTenantRoutes } from './modules/tenant/tenant.routes.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -53,6 +54,10 @@ export function buildApp(tenantRegistry: TenantRegistry, userRepository: UserRep
 
     if (statusCode === 409) {
       return reply.code(409).send({ error: 'CONFLICT', message: error.message })
+    }
+
+    if (statusCode === 503) {
+      return reply.code(503).send({ error: 'SERVICE_UNAVAILABLE', message: error.message })
     }
 
     request.log.error(error)
