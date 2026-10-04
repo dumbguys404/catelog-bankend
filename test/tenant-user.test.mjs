@@ -8,10 +8,10 @@ process.env.PLATFORM_HOST = 'platform.ourdomain.com'
 process.env.PLATFORM_ADMIN_USERNAME = 'platform-admin'
 process.env.PLATFORM_ADMIN_PASSWORD = 'platform-password'
 
-const { TenantRegistry } = await import('../src/tenant/registry.ts')
-const { UserRepository } = await import('../src/users/repository.ts')
+const { TenantRegistry } = await import('../src/modules/tenant/tenant.registry.ts')
+const { UserRepository } = await import('../src/modules/user/user.repository.ts')
 const { buildApp } = await import('../src/app.ts')
-const { db } = await import('../src/db/pool.ts')
+const { db } = await import('../src/plugins/db.ts')
 
 const basic = (email, password) => `Basic ${Buffer.from(`${email}:${password}`).toString('base64')}`
 

@@ -10,7 +10,7 @@ Tenant Basic Auth uses the user's **email** as the username. The user schema has
 
 ## Code layout
 
-Catalog and admin routes live in `src/routes/catalog` and `src/routes/admin`. Product records and response mapping are shared in `src/catalog/products.ts`; image mapping lives in `src/catalog/product-images.ts`. Product image uploads, product categories, and collection products each have a focused admin route module. PATCH handlers use the fixed field maps in their route files with `src/db/update-fields.ts` to build parameterized SQL. Run `npm run format` after editing these modules and `npm run format:check` to check formatting.
+Features live in `src/modules/<feature>` with routes, controllers, schemas, and database access grouped together. `src/modules/tenant/tenant.registry.ts` handles in-memory hostname resolution. The PostgreSQL pool and R2 storage helpers live in `src/plugins`; PATCH handlers use `src/utils/update-fields.ts` to build parameterized SQL from fixed field maps. Run `npm run format` after editing the modules and `npm run format:check` to check formatting.
 
 ## Requests
 

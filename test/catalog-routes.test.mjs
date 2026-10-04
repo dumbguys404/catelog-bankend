@@ -6,9 +6,14 @@ process.env.TENANT_BASE_DOMAIN = 'ourdomain.com'
 process.env.PLATFORM_HOST = 'platform.ourdomain.com'
 process.env.PLATFORM_ADMIN_USERNAME = 'platform-admin'
 process.env.PLATFORM_ADMIN_PASSWORD = 'platform-password'
+process.env.R2_ACCOUNT_ID = 'test-account'
+process.env.R2_ACCESS_KEY_ID = 'test-access-key'
+process.env.R2_SECRET_ACCESS_KEY = 'test-secret-key'
+process.env.R2_BUCKET = 'test-bucket'
+process.env.R2_UPLOAD_URL_TTL_SECONDS = '300'
 
 const { buildApp } = await import('../src/app.ts')
-const { db } = await import('../src/db/pool.ts')
+const { db } = await import('../src/plugins/db.ts')
 
 const tenant = { id: 12, code: 'shop', name: 'Shop', domain: null }
 const registry = {
@@ -73,6 +78,15 @@ test('split product and collection routes keep public/admin behavior and tenant 
         assert.equal(categories.statusCode, 200)
         assert.equal(collectionProducts.statusCode, 200)
 
+        const uploadUrl = await app.inject({
+            method: 'POST', url: '/api/admin/products/7/images/upload-url',
+            headers: platformHeaders, payload: { contentType: 'image/png', size: 128 }
+        })
+        assert.equal(uploadUrl.statusCode, 200)
+        assert.equal(uploadUrl.json().data.expiresIn, 300)
+        assert.deepEqual(uploadUrl.json().data.requiredHeaders, { 'Content-Type': 'image/png' })
+        assert.match(uploadUrl.json().data.objectKey, /^tenants\/12\/products\/7\//)
+
         const updated = await app.inject({
             method: 'PATCH', url: '/api/admin/products/7', headers: platformHeaders,
             payload: { name: 'New dress', price: 20 }
@@ -87,6 +101,41 @@ test('split product and collection routes keep public/admin behavior and tenant 
             payload: { tenantId: 99 }
         })
         assert.equal(tenantOverride.statusCode, 400)
+
+        const transactionQueries = []
+        const originalConnect = db.connect
+        db.connect = async () => ({
+            query: async (sql, values = []) => {
+                transactionQueries.push({ sql, values })
+                if (sql === 'BEGIN' || sql === 'COMMIT') return { rows: [] }
+                if (sql.includes('FROM product WHERE') && sql.includes('FOR UPDATE'))
+                    return { rows: [{ id: '7' }] }
+                const image = {
+                    id: '8', tenant_id: '12', product_id: '7',
+                    object_key: 'tenants/12/products/7/image.png', alt_text: null,
+                    is_primary: true, display_order: 0, created_at: new Date(0)
+                }
+                if (sql.includes('FROM product_image') && sql.includes('FOR UPDATE'))
+                    return { rows: [image] }
+                if (sql.startsWith('UPDATE product_image SET'))
+                    return { rows: [{ ...image, alt_text: 'Updated' }] }
+                throw new Error(`Unexpected transaction query: ${sql}`)
+            },
+            release() {}
+        })
+        try {
+            const imageUpdate = await app.inject({
+                method: 'PATCH', url: '/api/admin/products/7/images/8',
+                headers: platformHeaders, payload: { altText: 'Updated' }
+            })
+            assert.equal(imageUpdate.statusCode, 200)
+            assert.equal(imageUpdate.json().data.altText, 'Updated')
+            assert(transactionQueries.some(({ sql }) => sql === 'COMMIT'))
+            assert(transactionQueries.every(({ values }) =>
+                values.length === 0 || values[0] === tenant.id))
+        } finally {
+            db.connect = originalConnect
+        }
         assert(queries.every(({ values }) => values[0] === tenant.id))
     } finally {
         await app.close()

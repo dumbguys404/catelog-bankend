@@ -6,11 +6,11 @@ import {
   db,
   checkDatabaseConnection,
   closeDatabaseConnection
-} from './db/pool.js'
+} from './plugins/db.js'
 
 import { env } from './config/env.js'
-import { TenantRegistry } from './tenant/registry.js'
-import { UserRepository } from './users/repository.js'
+import { TenantRegistry } from './modules/tenant/tenant.registry.js'
+import { UserRepository } from './modules/user/user.repository.js'
 
 const tenantRegistry = new TenantRegistry(db, env.tenantBaseDomain, env.platformHost)
 const app = buildApp(tenantRegistry, new UserRepository(db))

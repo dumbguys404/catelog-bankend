@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { env } from '../config/env.js'
-import { normalizeHostname, type TenantContext } from '../tenant/registry.js'
+import { normalizeHostname, type TenantContext } from '../modules/tenant/tenant.registry.js'
 
 export type AuthenticatedUser = {
     id: number
