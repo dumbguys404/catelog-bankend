@@ -8,6 +8,10 @@ Tenant, user, category, brand, product, collection, and relationship APIs use Po
 
 Tenant Basic Auth uses the user's **email** as the username. The user schema has no separate username column. Passwords are stored as bcrypt hashes; plaintext passwords and hashes are not returned by the API. The platform administrator continues to use separate environment-based Basic Auth. No token, session, or server-side logout exists. The frontend logs out by clearing its Basic Auth credentials.
 
+## Code layout
+
+Catalog and admin routes live in `src/routes/catalog` and `src/routes/admin`. Product records and response mapping are shared in `src/catalog/products.ts`; image mapping lives in `src/catalog/product-images.ts`. Product image uploads, product categories, and collection products each have a focused admin route module. PATCH handlers use the fixed field maps in their route files with `src/db/update-fields.ts` to build parameterized SQL. Run `npm run format` after editing these modules and `npm run format:check` to check formatting.
+
 ## Requests
 
 Replace hosts, IDs, and credentials with configured values. A custom domain works only when the exact hostname is stored in `tenant.domain`.
